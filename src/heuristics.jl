@@ -767,7 +767,7 @@ function sweep_heuristic(instance::Instance)
 end
 
 # Clustering spatio-temporel
-function geographic_clustering(instance::Instance, nb_clusters::Int)
+function space_geographic_clustering(instance::Instance, nb_clusters::Int)
     # Définir les plages temporelles (en secondes)
     # Matin: 0-12h, Après-midi: 12h-18h, Soir: 18h-24h
     MORNING_END = 12 * 3600
@@ -856,7 +856,7 @@ function nearest_insertion_heuristic(instance::Instance)
 
     # Créer des clusters géographiques
     nb_initial_clusters = max(3, length(instance.orders) ÷ 10)
-    clusters = geographic_clustering(instance, nb_initial_clusters)
+    clusters = space_geographic_clustering(instance, nb_initial_clusters)
 
     # Pour chaque cluster, créer des routes
     for cluster in clusters
