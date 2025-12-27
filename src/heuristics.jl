@@ -766,36 +766,87 @@ function sweep_heuristic(instance::Instance)
     return Solution(routes)
 end
 
-# Regroupement géographique par secteurs
+# Clustering spatio-temporel
 function geographic_clustering(instance::Instance, nb_clusters::Int)
-    # Calculer les centroïdes géographiques
-    latitudes = [order.latitude for order in instance.orders]
-    longitudes = [order.longitude for order in instance.orders]
+    # Définir les plages temporelles (en secondes)
+    # Matin: 0-12h, Après-midi: 12h-18h, Soir: 18h-24h
+    MORNING_END = 12 * 3600
+    AFTERNOON_END = 18 * 3600
 
-    lat_min, lat_max = minimum(latitudes), maximum(latitudes)
-    lon_min, lon_max = minimum(longitudes), maximum(longitudes)
+    # Fonction pour déterminer la période de livraison d'une commande
+    function get_time_period(order::Order)
+        # Utiliser le milieu de la fenêtre de livraison
+        mid_time = (order.window_start + order.window_end) / 2
 
-    # Créer une grille de secteurs
-    clusters = [Int[] for _ in 1:nb_clusters]
-
-    # Assigner chaque client au cluster le plus proche (grille simple)
-    grid_size = ceil(Int, sqrt(nb_clusters))
-
-    for order in instance.orders
-        # Normaliser les coordonnées dans [0, 1]
-        lat_norm = (order.latitude - lat_min) / (lat_max - lat_min + 1e-10)
-        lon_norm = (order.longitude - lon_min) / (lon_max - lon_min + 1e-10)
-
-        # Trouver la cellule de la grille
-        row = min(floor(Int, lat_norm * grid_size) + 1, grid_size)
-        col = min(floor(Int, lon_norm * grid_size) + 1, grid_size)
-
-        cluster_id = min((row - 1) * grid_size + col, nb_clusters)
-        push!(clusters[cluster_id], order.id)
+        if mid_time < MORNING_END
+            return 1  # Matin
+        elseif mid_time < AFTERNOON_END
+            return 2  # Après-midi
+        else
+            return 3  # Soir
+        end
     end
 
-    # Filtrer les clusters vides
-    return filter(!isempty, clusters)
+    # Séparer les commandes par période temporelle
+    time_groups = Dict(1 => Int[], 2 => Int[], 3 => Int[])
+    for order in instance.orders
+        period = get_time_period(order)
+        push!(time_groups[period], order.id)
+    end
+
+    # Calculer le nombre de clusters par période (proportionnel au nombre de commandes)
+    total_orders = length(instance.orders)
+    clusters_per_period = Dict{Int, Int}()
+    for (period, order_ids) in time_groups
+        if !isempty(order_ids)
+            clusters_per_period[period] = max(1, round(Int, nb_clusters * length(order_ids) / total_orders))
+        end
+    end
+
+    # Créer les clusters géographiques pour chaque période temporelle
+    all_clusters = Vector{Int}[]
+
+    for (period, order_ids) in sort(collect(time_groups))
+        if isempty(order_ids)
+            continue
+        end
+
+        nb_clusters_period = get(clusters_per_period, period, 1)
+
+        # Récupérer les coordonnées pour cette période
+        period_orders = [instance.orders[id] for id in order_ids]
+        latitudes = [order.latitude for order in period_orders]
+        longitudes = [order.longitude for order in period_orders]
+
+        lat_min, lat_max = minimum(latitudes), maximum(latitudes)
+        lon_min, lon_max = minimum(longitudes), maximum(longitudes)
+
+        # Créer une grille de secteurs pour cette période
+        period_clusters = [Int[] for _ in 1:nb_clusters_period]
+        grid_size = ceil(Int, sqrt(nb_clusters_period))
+
+        for order in period_orders
+            # Normaliser les coordonnées dans [0, 1]
+            lat_norm = (order.latitude - lat_min) / (lat_max - lat_min + 1e-10)
+            lon_norm = (order.longitude - lon_min) / (lon_max - lon_min + 1e-10)
+
+            # Trouver la cellule de la grille
+            row = min(floor(Int, lat_norm * grid_size) + 1, grid_size)
+            col = min(floor(Int, lon_norm * grid_size) + 1, grid_size)
+
+            cluster_id = min((row - 1) * grid_size + col, nb_clusters_period)
+            push!(period_clusters[cluster_id], order.id)
+        end
+
+        # Ajouter les clusters non vides de cette période
+        for cluster in period_clusters
+            if !isempty(cluster)
+                push!(all_clusters, cluster)
+            end
+        end
+    end
+
+    return all_clusters
 end
 
 # Insertion au plus proche : construit des routes en insérant les clients un par un
