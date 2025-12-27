@@ -9,7 +9,7 @@ function route_radius_cost(route::Route, instance::Instance)
                 continue
             end
             route_diameter = max(
-                route_diameter, instance.euclidean_distances[id1 + 1, id2 + 2]
+                route_diameter, instance.euclidean_distances[id1 + 1, id2 + 1]
             )
         end
     end
